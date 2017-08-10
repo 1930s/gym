@@ -19,21 +19,19 @@ class FalconEnv(gym.Env):
         self.gravity = 9.81
         self.mass = 1.0
         self.momentofinertia = 1.0
-        self.length = 1.0  # actually half the rocket's length
+        self.length = 1.5
         self.dt = 0.02  # seconds between state updates
         self.groundheight = 1.0
         self.startheight = 8.0
         self.thrustmultiplier = 20.0  # thrust = thrustmultiplier * throttle
 
-        # Angle at which to fail the episode
-        self.theta_threshold_radians = math.pi / 4
+        self.theta_threshold_radians = math.pi / 3
         self.x_threshold = 10.0
-        self.y_threshold = self.startheight*2
+        self.y_threshold = self.startheight * 2
         self.phi_threshold = 0.3
 
-        # Angle limit set to 2 * theta_threshold_radians so failing observation is still within bounds
         high = np.array([
-            self.x_threshold * 2,
+            self.x_threshold * 3,
             np.finfo(np.float32).max,
             self.y_threshold,
             np.finfo(np.float32).max,
@@ -91,15 +89,22 @@ class FalconEnv(gym.Env):
         theta_dot = theta_dot - (1 / self.momentofinertia) * np.sin(phi) * force_mag * self.length / 2 * self.dt
 
         self.state = (x, x_dot, y, y_dot, theta, theta_dot, phi, throttle)
-        done = y < self.groundheight \
-            or y > self.y_threshold \
-            or abs(x) > self.x_threshold \
-            or abs(theta) > self.theta_threshold_radians
+        altitude = y-(self.groundheight+self.length/2)
+        speed = math.sqrt(x_dot**2 + y_dot**2)
+        distance = math.sqrt(x**2 + altitude**2)
 
-        if not done:
-            reward = 1  # TODO
+        if abs(theta) > self.theta_threshold_radians\
+                or y > self.y_threshold\
+                or altitude < 0\
+                or abs(x) > self.x_threshold:
+            reward = -1
+            done = True
+        elif altitude < 2 and speed < 2 and abs(theta) < 0.1:
+            reward = 2/abs(theta_dot)
+            done = True
         else:
-            reward = 0.0
+            reward = 0
+            done = False
 
         return np.array(self.state), reward, done, {}
 
@@ -108,8 +113,8 @@ class FalconEnv(gym.Env):
         self.state = [
             random.randint(-3, 3),  # x
             0,
-            self.startheight + random.randint(-3, 3),  # y
-            0,
+            self.startheight + random.randint(-2, 2),  # y
+            random.randint(-3, 3),
             float(np.random.randint(-4, 4)) / 10,  # theta
             float(np.random.randint(-4, 4)) / 10,  # theta_dot
             float(np.random.randint(-2, 2)) / 10,  # phi
@@ -142,12 +147,31 @@ class FalconEnv(gym.Env):
             self.viewer = rendering.Viewer(screen_width, screen_height)
 
             # rocket
+            leg_span = width_rocket * 6
+            leg_clearing = width_rocket * 1.3
+
+            self.rockettrans = rendering.Transform()
+
             l, r, t, b = -width_rocket / 2, width_rocket / 2, length_rocket, -length_rocket
             rocket = rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
-            rocket.set_color(0, 0, 0)
-            self.rockettrans = rendering.Transform()
             rocket.add_attr(self.rockettrans)
             self.viewer.add_geom(rocket)
+
+            leg_left = rendering.FilledPolygon(
+                [(width_rocket / 2, -length_rocket),
+                 (width_rocket / 2, width_rocket * 0.8 - length_rocket),
+                 (leg_span / 2, - leg_clearing - length_rocket)
+                 ])
+            leg_left.add_attr(self.rockettrans)
+            self.viewer.add_geom(leg_left)
+
+            leg_right = rendering.FilledPolygon(
+                [(-width_rocket / 2, -length_rocket),
+                 (-width_rocket / 2, width_rocket * 0.8 - length_rocket),
+                 (-leg_span / 2, - leg_clearing - length_rocket)
+                 ])
+            leg_right.add_attr(self.rockettrans)
+            self.viewer.add_geom(leg_right)
 
             # engine
             l, r, t_engine = -width_engine / 2, width_engine / 2, width_engine
@@ -161,7 +185,7 @@ class FalconEnv(gym.Env):
             # fire
             l, r, t = -width_fire / 2, width_fire / 2, width_fire * 2
             fire = rendering.FilledPolygon([(l, 0), (r, 0), (0, -t)])
-            fire.set_color(0.8, 0, 0)
+            fire.set_color(0.8, 0.4, 0)
             self.firescale = rendering.Transform(scale=(1, 1))
             self.firetrans = rendering.Transform(translation=(0, -t_engine))
             fire.add_attr(self.firescale)
