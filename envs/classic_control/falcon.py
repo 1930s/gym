@@ -22,34 +22,30 @@ class FalconEnv(gym.Env):
         self.length = 1.5
         self.dt = 0.02  # seconds between state updates
         self.groundheight = 1.0
-        self.startheight = 8.0
+        self.startheight = 10.0
         self.thrustmultiplier = 20.0  # thrust = thrustmultiplier * throttle
-
         self.theta_threshold_radians = math.pi / 3
         self.x_threshold = 10.0
         self.y_threshold = self.startheight * 2
         self.phi_threshold = 0.3
 
+        self.shaping = 0
+        self.prev_shaping = 0
+
         high = np.array([
-            self.x_threshold * 3,
-            np.finfo(np.float32).max,
+            self.x_threshold * 2,
             self.y_threshold,
-            np.finfo(np.float32).max,
             self.theta_threshold_radians * 2,
-            np.finfo(np.float32).max,
-            self.phi_threshold,
-            0.1
+            self.phi_threshold * 2,
+            0.0
         ])
 
         low = np.array([
             -self.x_threshold * 2,
-            -np.finfo(np.float32).max,
             self.groundheight,
-            -np.finfo(np.float32).max,
             -self.theta_threshold_radians * 2,
-            -np.finfo(np.float32).max,
-            -self.phi_threshold,
-            1.0
+            -self.phi_threshold * 2,
+            1.1
         ])
 
         self.action_space = spaces.Discrete(4)  # gimbal(left,right), throttle(up,down)
@@ -65,65 +61,68 @@ class FalconEnv(gym.Env):
 
     def _step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
-        x, x_dot, y, y_dot, theta, theta_dot, phi, throttle = self.state
+
+        x, y, theta, phi, throttle = self.state
 
         if action == 0:
-            phi = -self.phi_threshold
+            phi = phi + 0.05
         elif action == 1:
-            phi = self.phi_threshold
+            phi = phi - 0.05
         elif action == 2:
-            throttle = 1
+            throttle = throttle + 0.1
         elif action == 3:
-            throttle = 0.1
+            throttle = throttle - 0.1
 
-        phi = np.clip(phi, -1, 1)
+        phi = np.clip(phi, -self.phi_threshold, self.phi_threshold)
         throttle = np.clip(throttle, 0.1, 1.0)
 
         force_mag = self.thrustmultiplier * throttle
+        x = x + self.dt * self.x_dot
+        y = y + self.dt * self.y_dot
+        theta = theta + self.dt * self.theta_dot
+        self.x_dot = self.x_dot + 1 / self.mass * math.sin(theta + phi) * force_mag * self.dt
+        self.y_dot = self.y_dot + (1 / self.mass * math.cos(theta + phi) * force_mag - self.gravity) * self.dt
+        self.theta_dot = self.theta_dot - (1 / self.momentofinertia) * np.sin(phi) * force_mag * self.length / 2 * self.dt
+        self.state = (x, y, theta, phi, throttle)
+        altitude = y - (self.groundheight + self.length / 2)
+        speed = math.sqrt(self.x_dot ** 2 + self.y_dot ** 2)
+        distance = math.sqrt(x ** 2 + altitude ** 2)
 
-        x = x + self.dt * x_dot
-        y = y + self.dt * y_dot
-        theta = theta + self.dt * theta_dot
-        x_dot = x_dot + 1 / self.mass * math.sin(theta + phi) * force_mag * self.dt
-        y_dot = y_dot + (1 / self.mass * math.cos(theta + phi) * force_mag - self.gravity) * self.dt
-        theta_dot = theta_dot - (1 / self.momentofinertia) * np.sin(phi) * force_mag * self.length / 2 * self.dt
+        # REWARDS TODO
+        # -----------------------
+        done = False
+        reward = 0
 
-        self.state = (x, x_dot, y, y_dot, theta, theta_dot, phi, throttle)
-        altitude = y-(self.groundheight+self.length/2)
-        speed = math.sqrt(x_dot**2 + y_dot**2)
-        distance = math.sqrt(x**2 + altitude**2)
+        if self.y_dot > 0:
+            reward -=1
 
-        if abs(theta) > self.theta_threshold_radians\
-                or y > self.y_threshold\
-                or altitude < 0\
-                or abs(x) > self.x_threshold:
-            reward = -1
+
+        # game over
+        if y > self.y_threshold or abs(x) > self.x_threshold or abs(theta) > self.theta_threshold_radians:
             done = True
-        elif altitude < 2 and speed < 2 and abs(theta) < 0.1:
-            reward = 2/abs(theta_dot)
+            reward += -50
+        elif altitude < 3 and abs(x) < 3 and speed < 3 and abs(theta) < 0.3:
             done = True
-        else:
-            reward = 0
-            done = False
+            reward += max(0, 200 - altitude**2 - x**2 - speed**2 - theta**2)
+            print("LANDED ", reward)
+
+        # -----------------------
 
         return np.array(self.state), reward, done, {}
 
     def _reset(self):
-        # self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(8,))
+        self.theta_dot, self.x_dot, self.y_dot  = random.uniform(-0.3, 0.3), random.uniform(-2.0, 2.0), random.uniform(-2.0, 2.0)
         self.state = [
-            random.randint(-3, 3),  # x
-            0,
-            self.startheight + random.randint(-2, 2),  # y
-            random.randint(-3, 3),
-            float(np.random.randint(-4, 4)) / 10,  # theta
-            float(np.random.randint(-4, 4)) / 10,  # theta_dot
-            float(np.random.randint(-2, 2)) / 10,  # phi
-            float(np.random.randint(1, 4)) / 10  # throttle
-        ]
+                      random.uniform(-1.0, 1.0),  # x
+                      self.startheight,  # y
+                      random.uniform(-self.theta_threshold_radians / 2, self.theta_threshold_radians / 2),  # theta
+                      random.uniform(-self.phi_threshold, self.phi_threshold),  # phi
+                      random.uniform(0.1, 1)  # throttle
+                      ]
         self.steps_beyond_done = None
         return np.array(self.state)
 
-    def _render(self, mode='human', close=False):
+    def _render(self, mode='rgb_array', close=False):
         if close:
             if self.viewer is not None:
                 self.viewer.close()
@@ -185,7 +184,7 @@ class FalconEnv(gym.Env):
             # fire
             l, r, t = -width_fire / 2, width_fire / 2, width_fire * 2
             fire = rendering.FilledPolygon([(l, 0), (r, 0), (0, -t)])
-            fire.set_color(0.8, 0.4, 0)
+            fire.set_color(0.9, 0.6, 0.3)
             self.firescale = rendering.Transform(scale=(1, 1))
             self.firetrans = rendering.Transform(translation=(0, -t_engine))
             fire.add_attr(self.firescale)
@@ -206,9 +205,9 @@ class FalconEnv(gym.Env):
 
         x = self.state
         xpos = x[0] * scale + screen_width / 2.0
-        ypos = x[2] * scale
+        ypos = x[1] * scale
         self.rockettrans.set_translation(xpos, ypos)
-        self.rockettrans.set_rotation(-x[4])
-        self.enginetrans.set_rotation(-x[6])
-        self.firescale.set_scale(newx=1, newy=x[7])
+        self.rockettrans.set_rotation(-x[2])
+        self.enginetrans.set_rotation(-x[3])
+        self.firescale.set_scale(newx=1, newy=x[4])
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
