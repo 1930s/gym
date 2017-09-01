@@ -41,8 +41,8 @@ LEG_DOWN = 0
 LEG_W, LEG_H = 4, 25
 LEG_SPRING_TORQUE = 40
 
-BARGE_HEIGHT = 25
-BARGE_WIDTH = 300
+BARGE_HEIGHT = 25 / SCALE
+BARGE_WIDTH = 300 / SCALE
 
 VIEWPORT_W = 900
 VIEWPORT_H = 1200
@@ -59,10 +59,10 @@ class ContactDetector(contactListener):
         if self.env.water in [contact.fixtureA.body, contact.fixtureB.body] \
                 or self.env.lander in [contact.fixtureA.body, contact.fixtureB.body]:
             self.env.game_over = True
-
-        for i in range(2):
-            if self.env.legs[i] in [contact.fixtureA.body, contact.fixtureB.body]:
-                self.env.legs[i].ground_contact = True
+        else:
+            for i in range(2):
+                if self.env.legs[i] in [contact.fixtureA.body, contact.fixtureB.body]:
+                    self.env.legs[i].ground_contact = True
 
     def EndContact(self, contact):
         for i in range(2):
@@ -99,7 +99,7 @@ class RocketLander(gym.Env):
             self.action_space = spaces.Box(-1, +1, (2,))
         else:
             # gimbal (left/right) or throttle (up/down)
-            self.action_space = spaces.Discrete(4)
+            self.action_space = spaces.Discrete(5)
 
         self._reset()
 
@@ -130,29 +130,30 @@ class RocketLander(gym.Env):
         self.gimbal = 0.0
 
         # terrain TODO
-        self.terrainheigth = self.np_random.uniform(H / 20, H / 10)
-        barge_pos = self.np_random.uniform(0, BARGE_WIDTH / SCALE) + BARGE_WIDTH / SCALE
-        self.helipad_x1 = barge_pos
-        self.helipad_x2 = self.helipad_x1 + BARGE_WIDTH / SCALE
-        self.helipad_y = self.terrainheigth + BARGE_HEIGHT / SCALE
+        # self.terrainheigth = self.np_random.uniform(H / 20, H / 10)
+        self.terrainheigth = H / 15
+        # barge_pos = self.np_random.uniform(0, BARGE_WIDTH / SCALE) + BARGE_WIDTH / SCALE
+        barge_pos = W / 2
+        self.helipad_x1 = barge_pos - BARGE_WIDTH / 2
+        self.helipad_x2 = self.helipad_x1 + BARGE_WIDTH
+        self.helipad_y = self.terrainheigth + BARGE_HEIGHT
 
         self.water = self.world.CreateStaticBody(
             fixtures=fixtureDef(
                 shape=polygonShape(vertices=[(0, 0), (W, 0), (W, self.terrainheigth), (0, self.terrainheigth)]),
-                density=0,
                 friction=0.1,
                 restitution=0.0)
         )
-        self.water.color1 = (0.53 / 2, 0.81 / 2, 0.98 / 2)
-        self.water.color2 = (0.53 / 2, 0.81 / 2, 0.98 / 2)
+        self.water.color1 = (0.25, 0.64, 0.87)
+        self.water.color2 = self.water.color1
 
         self.barge = self.world.CreateStaticBody(
             fixtures=fixtureDef(
                 shape=polygonShape(
-                    vertices=[(self.helipad_x1, self.terrainheigth), (self.helipad_x2, self.terrainheigth),
-                              (self.helipad_x2, self.terrainheigth + BARGE_HEIGHT / SCALE),
-                              (self.helipad_x1, self.terrainheigth + BARGE_HEIGHT / SCALE)]),
-                density=0,
+                    vertices=[(self.helipad_x1 + BARGE_HEIGHT, self.terrainheigth),
+                              (self.helipad_x2 - BARGE_HEIGHT, self.terrainheigth),
+                              (self.helipad_x2, self.terrainheigth + BARGE_HEIGHT),
+                              (self.helipad_x1, self.terrainheigth + BARGE_HEIGHT)]),
                 friction=0.1,
                 restitution=0.0)
         )
@@ -174,7 +175,7 @@ class RocketLander(gym.Env):
         self.lander.color1 = (0.8, 0.8, 0.8)
         self.lander.color2 = (0.7, 0.7, 0.7)
         self.lander.ApplyForceToCenter((
-            self.np_random.uniform(-INITIAL_RANDOM, INITIAL_RANDOM),
+            self.np_random.uniform(-5*INITIAL_RANDOM, -5*INITIAL_RANDOM),
             self.np_random.uniform(-20 * INITIAL_RANDOM, -10 * INITIAL_RANDOM)
         ), True)
 
@@ -308,7 +309,7 @@ class RocketLander(gym.Env):
             engine.set_color(0.3, 0.3, 0.3)
             self.viewer.add_geom(engine)
             # fire
-            width_fire = ENGINE_SIZE / SCALE * 0.5
+            width_fire = ENGINE_SIZE / SCALE * 0.8
             l, r, t = -width_fire / 2, width_fire / 2, width_fire * 3
             fire = rendering.FilledPolygon([(0, -t / 6), (l, -t / 3), (0, -t), (r, -t / 3)])
             fire.set_color(0.9, 0.6, 0.3)
@@ -342,5 +343,3 @@ class RocketLander(gym.Env):
         self.firescale.set_scale(newx=self.throttle, newy=self.throttle)
 
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
-
-
