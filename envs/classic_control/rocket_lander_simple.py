@@ -88,7 +88,7 @@ class RocketLanderSimple(gym.Env):
         speed = math.sqrt(self.x_dot ** 2 + self.y_dot ** 2)
         distance = math.sqrt(x ** 2 + altitude ** 2)
 
-        # REWARDS TODO
+        # REWARDS
         # -----------------------
         done = False
         reward = 0

@@ -92,7 +92,7 @@ register(
 
 register(
     id='RocketLanderSimple-v0',
-    entry_point='gym.envs.classic_control:CartPoleEnv',
+    entry_point='gym.envs.classic_control:RocketLanderSimple',
     max_episode_steps=500,
     reward_threshold=300,
 )
@@ -139,7 +139,7 @@ register(
     id='RocketLander-v0',
     entry_point='gym.envs.box2d:RocketLander',
     max_episode_steps=1000,
-    reward_threshold=200,
+    reward_threshold=1000,
 )
 
 # Toy Text
