@@ -10,22 +10,18 @@ from gym.utils import seeding
 CONTINUOUS = False
 
 FPS = 50
-SCALE_S = 0.3  # Temporal Scaling
 
 INITIAL_RANDOM = 1.0
 
-START_FUEL = 160.0
-START_HEIGHT = 500.0
-START_SPEED = 50
+START_FUEL = 300.0
 
 # ROCKET
 ROCKET_RATIO = 12
-ROCKET_WIDTH = 3.7 * SCALE_S
-ROCKET_HEIGHT = ROCKET_WIDTH / 3.7 * 40
+ROCKET_WIDTH = 3.7
+ROCKET_HEIGHT = 40.0
 ENGINE_HEIGHT = ROCKET_WIDTH * 0.5
 ENGINE_WIDTH = ENGINE_HEIGHT * 0.7
-MAIN_ENGINE_POWER = 10000 * SCALE_S ** 2
-SIDE_ENGINE_POWER = 150 * SCALE_S ** 2
+MAIN_ENGINE_POWER = 870000
 GIMBAL_THRESHOLD = 0.4
 LANDER_POLY = [
     (-ROCKET_WIDTH / 2, 0),
@@ -44,7 +40,7 @@ LEG_LENGTH = ROCKET_WIDTH * 3
 BASE_ANGLE = -0.55
 SPRING_ANGLE = 0.1
 LEG_AWAY = ROCKET_WIDTH / 2
-LEG_SPRING_TORQUE = 30 * SCALE_S ** 2
+LEG_SPRING_TORQUE = 40
 
 
 def LEG_POLY(i):
@@ -52,13 +48,13 @@ def LEG_POLY(i):
             [i * LEG_LENGTH / 3, -LEG_LENGTH / 7])
 
 
-BARGE_HEIGHT = ROCKET_WIDTH * 1
-BARGE_WIDTH = BARGE_HEIGHT * 15
+BARGE_HEIGHT = ROCKET_WIDTH * 2
+BARGE_WIDTH = BARGE_HEIGHT * 10
 
-VIEWPORT_H = 1200
 VIEWPORT_W = 900
-H = 1.1 * START_HEIGHT * SCALE_S
-W = VIEWPORT_W / VIEWPORT_H * H
+VIEWPORT_H = 1200
+W = VIEWPORT_W
+H = VIEWPORT_H
 
 
 class ContactDetector(contactListener):
@@ -98,7 +94,7 @@ class RocketLander(gym.Env):
         self.barge = None
         self.legs = []
 
-        high = np.array([np.inf] * 7)  # useful range is -1 .. +1, but spikes can be higher
+        high = np.array([np.inf] * 10)  # useful range is -1 .. +1, but spikes can be higher
         self.observation_space = spaces.Box(-high, high)
 
         if CONTINUOUS:
@@ -107,7 +103,7 @@ class RocketLander(gym.Env):
             # Left-right:  -1.0..-0.5 fire left engine, +0.5..+1.0 fire right engine, -0.5..0.5 off
             self.action_space = spaces.Box(-1, +1, (2,))
         else:
-            self.action_space = spaces.Discrete(7)
+            self.action_space = spaces.Discrete(5)
 
         self._reset()
 
@@ -140,7 +136,7 @@ class RocketLander(gym.Env):
 
         # terrain
         # self.terrainheigth = self.np_random.uniform(H / 20, H / 10)
-        self.terrainheigth = H / 20
+        self.terrainheigth = H / 15
         # barge_pos = self.np_random.uniform(0, BARGE_WIDTH / SCALE) + BARGE_WIDTH / SCALE
         barge_pos = W / 2
         self.helipad_x1 = barge_pos - BARGE_WIDTH / 2
@@ -176,18 +172,17 @@ class RocketLander(gym.Env):
             angle=0.0,
             fixtures=fixtureDef(
                 shape=polygonShape(vertices=LANDER_POLY),
-                density=1.0,
                 friction=0.5,
                 categoryBits=0x0010,
                 maskBits=0x001,  # collide only with ground
                 restitution=0.0)
         )
 
+        self.lander.mass = 18000
         self.lander.color1 = (0.85, 0.85, 0.85)
-        self.lander.linearVelocity = (
-            self.np_random.uniform(-0.1 * START_SPEED * INITIAL_RANDOM, 0.1 * START_SPEED * INITIAL_RANDOM),
-            self.np_random.uniform(-1.2 * START_SPEED * INITIAL_RANDOM, -0.8 * START_SPEED * INITIAL_RANDOM))
-        self.lander.angularVelocity = self.np_random.uniform(-0.01 * INITIAL_RANDOM, 0.01 * INITIAL_RANDOM)
+        self.lander.linearVelocity = (self.np_random.uniform(-50 * INITIAL_RANDOM, 50 * INITIAL_RANDOM),
+                                      self.np_random.uniform(-500 * INITIAL_RANDOM, -400 * INITIAL_RANDOM))
+        self.lander.angularVelocity = self.np_random.uniform(-0.05 * INITIAL_RANDOM, 0.05 * INITIAL_RANDOM)
 
         for i in [-1, +1]:
             leg = self.world.CreateDynamicBody(
@@ -211,10 +206,10 @@ class RocketLander(gym.Env):
                 enableMotor=True,
                 enableLimit=True,
                 maxMotorTorque=LEG_SPRING_TORQUE,
-                motorSpeed=-0.05 * i
+                motorSpeed=-0.15 * i  # low enough not to jump back into the sky
             )
             if i == 1:
-                rjd.lowerAngle = +BASE_ANGLE - SPRING_ANGLE
+                rjd.lowerAngle = +BASE_ANGLE - SPRING_ANGLE  # Yes, the most esoteric numbers here, angles legs have freedom to travel within
                 rjd.upperAngle = +BASE_ANGLE
             else:
                 rjd.lowerAngle = -BASE_ANGLE
@@ -227,11 +222,9 @@ class RocketLander(gym.Env):
         if CONTINUOUS:
             return self._step([0, 0])[0]
         else:
-            return self._step(6)[0]
+            return self._step(4)[0]
 
     def _step(self, action):
-
-        self.force_dir = 0
 
         if CONTINUOUS:
             if action[0] > 0.2:
@@ -251,73 +244,62 @@ class RocketLander(gym.Env):
                 self.throttle += 0.12
             elif action == 3:
                 self.throttle -= 0.12
-            elif action == 4:  # left
-                self.force_dir = -1
-            elif action == 5:  # right
-                self.force_dir = 1
-
 
         self.gimbal = np.clip(self.gimbal, -GIMBAL_THRESHOLD, GIMBAL_THRESHOLD)
-        self.throttle = np.clip(self.throttle, 0.0, 1.0)
+        self.throttle = np.clip(self.throttle, 0.1, 1.0)
+        # Engines
+        tip = (math.sin(self.lander.angle), math.cos(self.lander.angle))
 
-        force_pos = (self.lander.position[0], self.lander.position[1])
-        force = (-math.sin(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.throttle,
-                 math.cos(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.throttle)
-        self.lander.ApplyForce(force=force, point=force_pos, wake=False)
+        ox = tip[0]
+        oy = -tip[1]
+        impulse_pos = (self.lander.position[0], self.lander.position[1])
+        impulse = (-math.sin(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.throttle,
+                   math.cos(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.throttle)
+        self.lander.ApplyForce(impulse, impulse_pos, True)
 
-        force_pos_s = self.lander.fixtures[0].body.transform * [-ROCKET_WIDTH / 2, ROCKET_HEIGHT * 0.9]
-        force_s = (-self.force_dir * math.cos(self.lander.angle) * SIDE_ENGINE_POWER,
-                   self.force_dir * math.sin(self.lander.angle) * SIDE_ENGINE_POWER)
-        self.lander.ApplyForce(force=force_s, point=force_pos_s, wake=False)
-
-        self.world.Step(1.0 / FPS, 10, 10)
+        self.world.Step(1.0 / FPS, 12, 4)
 
         pos = self.lander.position
         vel = self.lander.linearVelocity
         state = [
-            2 * (pos.x - W / 2) / H,
-            2 * (pos.y - self.helipad_y) / H,
-            # 0.5*vel.x / START_SPEED * W / FPS,
-            # 0.5 *vel.y / START_SPEED * H / FPS,
+            (pos.x - W / 2),
+            (pos.y - self.helipad_y),
+            vel.x / FPS,
+            vel.y / FPS,
             self.lander.angle,
-            # 20 * self.lander.angularVelocity / FPS,
+            20 * self.lander.angularVelocity / FPS,
             1.0 if self.legs[0].ground_contact else 0.0,
             1.0 if self.legs[1].ground_contact else 0.0,
             self.throttle,
             self.gimbal
         ]
-
         self.fuel -= self.throttle
 
-        if not self.force_dir == 0:
-            self.fuel -= 0.5
-
         distance = np.linalg.norm(state[0:2])
-        speed = np.linalg.norm(vel)/FPS
-        angle = abs(state[2])
+        speed = np.linalg.norm(state[2:4])
+        angle = abs(state[4])
 
         # REWARD -----------------------------------------------
         reward = 0.0
         shaping = - 100 * distance \
                   - 100 * speed \
                   - 100 * angle \
-                  + 20 * (state[3] + state[4])
+                  + 20 * (state[6] + state[7])
 
         if self.prev_shaping is not None:
             reward += shaping - self.prev_shaping
         self.prev_shaping = shaping
 
         done = False
-        if self.game_over or abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
+        if self.game_over or abs(state[0]) > W / 2 or pos.y > H or self.fuel < 0:
             done = True
-            reward = -100
-        if self.legs[0].ground_contact and self.legs[1].ground_contact and speed<0.05:
-            print("did it!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            reward = -300
+        if not self.lander.awake:
             done = True
-            reward = 100 + self.fuel / START_FUEL * 100
+            reward = 300 + self.fuel
         # REWARD -----------------------------------------------
 
-        return np.array(state), reward/300, done, {}
+        return np.array(state), reward, done, {}
 
     def _render(self, mode='human', close=False):
         if close:
@@ -359,16 +341,6 @@ class RocketLander(gym.Env):
             fire.add_attr(self.rockettrans)
             self.viewer.add_geom(fire)
 
-            puff = rendering.FilledPolygon([(ROCKET_WIDTH / 2, ROCKET_HEIGHT * 0.9),
-                                            (ROCKET_WIDTH * 3, ROCKET_HEIGHT * 0.93),
-                                            (ROCKET_WIDTH * 4, ROCKET_HEIGHT * 0.9),
-                                            (ROCKET_WIDTH * 3, ROCKET_HEIGHT * 0.87)])
-            puff.set_color(185. / 255, 198. / 255, 255. / 255)
-            self.puffscale = rendering.Transform(scale=(1, 1))
-            puff.add_attr(self.puffscale)
-            puff.add_attr(self.rockettrans)
-            self.viewer.add_geom(puff)
-
         for obj in self.drawlist:
             for f in obj.fixtures:
                 trans = f.body.transform
@@ -377,11 +349,6 @@ class RocketLander(gym.Env):
                 path.append(path[0])
                 if hasattr(obj, 'color2'):
                     self.viewer.draw_polyline(path, color=obj.color2, linewidth=2)
-
-        for l in zip(self.legs, [-1, 1]):
-            path = [self.lander.fixtures[0].body.transform * [l[1] * ROCKET_WIDTH / 2, ROCKET_HEIGHT / 8],
-                    l[0].fixtures[0].body.transform * [l[1] * LEG_LENGTH * 0.8, 0]]
-            self.viewer.draw_polyline(path, color=self.barge.color1, linewidth=1)
 
         self.viewer.draw_polyline([(self.helipad_x2, self.terrainheigth + BARGE_HEIGHT),
                                    (self.helipad_x1, self.terrainheigth + BARGE_HEIGHT)], color=self.yellow,
@@ -397,6 +364,5 @@ class RocketLander(gym.Env):
         self.rockettrans.set_rotation(self.lander.angle)
         self.enginetrans.set_rotation(self.gimbal)
         self.firescale.set_scale(newx=1, newy=self.throttle * np.random.uniform(0.9, 1.1))
-        self.puffscale.set_scale(newx=self.force_dir, newy=1)
 
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
