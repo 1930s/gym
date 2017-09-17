@@ -25,7 +25,7 @@ ROCKET_HEIGHT = ROCKET_WIDTH / 3.7 * 40
 ENGINE_HEIGHT = ROCKET_WIDTH * 0.5
 ENGINE_WIDTH = ENGINE_HEIGHT * 0.7
 MAIN_ENGINE_POWER = 10000 * SCALE_S ** 2
-SIDE_ENGINE_POWER = 100 * SCALE_S ** 2
+SIDE_ENGINE_POWER = 50 * SCALE_S ** 2
 GIMBAL_THRESHOLD = 0.4
 LANDER_POLY = [
     (-ROCKET_WIDTH / 2, 0),
@@ -282,17 +282,16 @@ class RocketLander(gym.Env):
             self.throttle,
             self.gimbal
         ]
-        self.fuel -= self.throttle
-
-        if not self.force_dir == 0:
-            self.fuel -= 0.5
-
         distance = np.linalg.norm(state[0:2])
         speed = np.linalg.norm(vel) / FPS
         angle = abs(state[2])
 
+        self.fuel -= self.throttle
+        if not self.force_dir == 0:
+            self.fuel -= 0.5
+
         # REWARD -----------------------------------------------
-        reward = -self.throttle / 100
+        reward = -self.throttle / 100 - abs(self.force_dir) / 50
 
         if self.legs[0].joint.angle < -0.4 or self.legs[1].joint.angle > 0.4 or \
                         abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
