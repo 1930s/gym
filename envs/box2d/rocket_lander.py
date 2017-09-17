@@ -10,22 +10,22 @@ from gym.utils import seeding
 CONTINUOUS = False
 
 FPS = 50
-SCALE_S = 0.3  # Temporal Scaling
+SCALE_S = 0.5  # Temporal Scaling
 
 INITIAL_RANDOM = 1.0
 
-START_FUEL = 160.0
-START_HEIGHT = 500.0
-START_SPEED = 50
+START_FUEL = 250.0
+START_HEIGHT = 400.0
+START_SPEED = 100.0
 
 # ROCKET
-ROCKET_RATIO = 12
+ROCKET_RATIO = 14
 ROCKET_WIDTH = 3.7 * SCALE_S
 ROCKET_HEIGHT = ROCKET_WIDTH / 3.7 * 40
 ENGINE_HEIGHT = ROCKET_WIDTH * 0.5
 ENGINE_WIDTH = ENGINE_HEIGHT * 0.7
 MAIN_ENGINE_POWER = 10000 * SCALE_S ** 2
-SIDE_ENGINE_POWER = 150 * SCALE_S ** 2
+SIDE_ENGINE_POWER = 100 * SCALE_S ** 2
 GIMBAL_THRESHOLD = 0.4
 LANDER_POLY = [
     (-ROCKET_WIDTH / 2, 0),
@@ -40,11 +40,11 @@ ENGINE_POLY = [
 ]
 
 # LEGS
-LEG_LENGTH = ROCKET_WIDTH * 3
-BASE_ANGLE = -0.55
-SPRING_ANGLE = 0.1
+LEG_LENGTH = ROCKET_WIDTH * 2.5
+BASE_ANGLE = -0.3
+SPRING_ANGLE = 0.3
 LEG_AWAY = ROCKET_WIDTH / 2
-LEG_SPRING_TORQUE = 30 * SCALE_S ** 2
+LEG_SPRING_TORQUE = 1000 * SCALE_S ** 2
 
 
 def LEG_POLY(i):
@@ -192,7 +192,7 @@ class RocketLander(gym.Env):
         for i in [-1, +1]:
             leg = self.world.CreateDynamicBody(
                 position=(initial_x - i * LEG_AWAY, initial_y + ROCKET_WIDTH * 0.2),
-                angle=(i * 0.05),
+                angle=(i * BASE_ANGLE),
                 fixtures=fixtureDef(
                     shape=polygonShape(vertices=LEG_POLY(i)),
                     density=1.0,
@@ -211,14 +211,14 @@ class RocketLander(gym.Env):
                 enableMotor=True,
                 enableLimit=True,
                 maxMotorTorque=LEG_SPRING_TORQUE,
-                motorSpeed=-0.05 * i
+                motorSpeed=-0.5 * i
             )
             if i == 1:
-                rjd.lowerAngle = +BASE_ANGLE - SPRING_ANGLE
-                rjd.upperAngle = +BASE_ANGLE
+                rjd.lowerAngle = -SPRING_ANGLE
+                rjd.upperAngle = 0
             else:
-                rjd.lowerAngle = -BASE_ANGLE
-                rjd.upperAngle = -BASE_ANGLE + SPRING_ANGLE
+                rjd.lowerAngle = 0
+                rjd.upperAngle = + SPRING_ANGLE
             leg.joint = self.world.CreateJoint(rjd)
             self.legs.append(leg)
 
@@ -244,18 +244,17 @@ class RocketLander(gym.Env):
                 self.gimbal -= 0.10
         else:
             if action == 0:
-                self.gimbal += 0.07
+                self.gimbal += 0.1
             elif action == 1:
-                self.gimbal -= 0.07
+                self.gimbal -= 0.1
             elif action == 2:
-                self.throttle += 0.12
+                self.throttle += 0.15
             elif action == 3:
-                self.throttle -= 0.12
+                self.throttle -= 0.15
             elif action == 4:  # left
                 self.force_dir = -1
             elif action == 5:  # right
                 self.force_dir = 1
-
 
         self.gimbal = np.clip(self.gimbal, -GIMBAL_THRESHOLD, GIMBAL_THRESHOLD)
         self.throttle = np.clip(self.throttle, 0.0, 1.0)
@@ -265,59 +264,63 @@ class RocketLander(gym.Env):
                  math.cos(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.throttle)
         self.lander.ApplyForce(force=force, point=force_pos, wake=False)
 
-        force_pos_s = self.lander.fixtures[0].body.transform * [-ROCKET_WIDTH / 2, ROCKET_HEIGHT * 0.9]
+        force_pos_s = self.lander.fixtures[0].body.transform * [0, ROCKET_HEIGHT * 0.9]
         force_s = (-self.force_dir * math.cos(self.lander.angle) * SIDE_ENGINE_POWER,
                    self.force_dir * math.sin(self.lander.angle) * SIDE_ENGINE_POWER)
-        self.lander.ApplyForce(force=force_s, point=force_pos_s, wake=False)
+        self.lander.ApplyLinearImpulse(impulse=force_s, point=force_pos_s, wake=False)
 
         self.world.Step(1.0 / FPS, 10, 10)
 
         pos = self.lander.position
         vel = self.lander.linearVelocity
         state = [
-            2 * (pos.x - W / 2) / H,
-            2 * (pos.y - self.helipad_y) / H,
-            # 0.5*vel.x / START_SPEED * W / FPS,
-            # 0.5 *vel.y / START_SPEED * H / FPS,
+            (pos.x - W / 2) / H,
+            (pos.y - self.helipad_y) / H,
             self.lander.angle,
-            # 20 * self.lander.angularVelocity / FPS,
             1.0 if self.legs[0].ground_contact else 0.0,
             1.0 if self.legs[1].ground_contact else 0.0,
             self.throttle,
             self.gimbal
         ]
-
         self.fuel -= self.throttle
 
         if not self.force_dir == 0:
             self.fuel -= 0.5
 
         distance = np.linalg.norm(state[0:2])
-        speed = np.linalg.norm(vel)/FPS
+        speed = np.linalg.norm(vel) / FPS
         angle = abs(state[2])
 
         # REWARD -----------------------------------------------
-        reward = 0.0
-        shaping = - 100 * distance \
-                  - 100 * speed \
-                  - 100 * angle \
-                  + 20 * (state[3] + state[4])
+        reward = -self.throttle / 100
 
-        if self.prev_shaping is not None:
-            reward += shaping - self.prev_shaping
-        self.prev_shaping = shaping
+        if self.legs[0].joint.angle < -0.4 or self.legs[1].joint.angle > 0.4 or \
+                        abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
+            self.game_over = True
+
+        landed = self.legs[0].ground_contact and self.legs[1].ground_contact and \
+                 speed < 0.02
 
         done = False
-        if self.game_over or abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
+        if self.game_over:
             done = True
-            reward = -100
-        if self.legs[0].ground_contact and self.legs[1].ground_contact and speed<0.05:
-            print("did it!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            done = True
-            reward = 100 + self.fuel / START_FUEL * 100
+            reward = -1
+        else:
+            shaping = - 1 * distance \
+                      - 1 * speed \
+                      - 1 * angle \
+                      + 0.2 * (state[3] + state[4])
+            if self.prev_shaping is not None:
+                reward += shaping - self.prev_shaping
+            self.prev_shaping = shaping
+
+            if landed:
+                print("LANDED SUCCESSFULLY")
+                done = True
+                reward = 1
         # REWARD -----------------------------------------------
 
-        return np.array(state), reward/300, done, {}
+        return np.array(state), reward, done, {}
 
     def _render(self, mode='human', close=False):
         if close:
@@ -384,7 +387,8 @@ class RocketLander(gym.Env):
             self.viewer.draw_polyline(path, color=self.barge.color1, linewidth=1)
 
         self.viewer.draw_polyline([(self.helipad_x2, self.terrainheigth + BARGE_HEIGHT),
-                                   (self.helipad_x1, self.terrainheigth + BARGE_HEIGHT)], color=self.yellow,
+                                   (self.helipad_x1, self.terrainheigth + BARGE_HEIGHT)],
+                                  color=self.yellow,
                                   linewidth=2)
 
         for x in [self.helipad_x1, self.helipad_x2]:
