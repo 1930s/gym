@@ -55,8 +55,8 @@ def LEG_POLY(i):
 BARGE_HEIGHT = ROCKET_WIDTH * 1
 BARGE_WIDTH = BARGE_HEIGHT * 15
 
-VIEWPORT_H = 1200
-VIEWPORT_W = 900
+VIEWPORT_H = 900
+VIEWPORT_W = 700
 H = 1.1 * START_HEIGHT * SCALE_S
 W = VIEWPORT_W / VIEWPORT_H * H
 
@@ -178,7 +178,7 @@ class RocketLander(gym.Env):
                 maskBits=0x001,  # collide only with ground
                 restitution=0.0)
         )
-        self.lander.localCenter = (0, ROCKET_HEIGHT / 3)
+        self.lander.localCenter = (0, ROCKET_HEIGHT * 0.4)
 
         self.lander.color1 = (0.85, 0.85, 0.85)
         self.lander.linearVelocity = (
@@ -295,7 +295,7 @@ class RocketLander(gym.Env):
             self.fuel -= 0.5
 
         # REWARD -----------------------------------------------
-        reward = -self.throttle / 100 - abs(self.force_dir) / 100 - 1 / 500
+        reward = -self.throttle / 100 - abs(self.force_dir) / 100 - 1 / 100
 
         if self.legs[0].joint.angle < -0.4 or self.legs[1].joint.angle > 0.4 or \
                         abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
@@ -308,7 +308,7 @@ class RocketLander(gym.Env):
         else:
             shaping = - 1 * distance \
                       - 1 * speed \
-                      - 1 * angle \
+                      - 0.4 * angle \
                       + 0.2 * (state[3] + state[4])
             if self.prev_shaping is not None:
                 reward += shaping - self.prev_shaping
