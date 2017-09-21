@@ -13,11 +13,11 @@ CONTINUOUS = False
 FPS = 50
 SCALE_S = 0.5  # Temporal Scaling
 
-INITIAL_RANDOM = 1.0
+INITIAL_RANDOM = 0.7
 
-START_FUEL = 250.0
+START_FUEL = 200.0
 START_HEIGHT = 400.0
-START_SPEED = 100.0
+START_SPEED = 80.0
 
 # ROCKET
 ROCKET_RATIO = 14
@@ -26,7 +26,7 @@ ROCKET_HEIGHT = ROCKET_WIDTH / 3.7 * 40
 ENGINE_HEIGHT = ROCKET_WIDTH * 0.5
 ENGINE_WIDTH = ENGINE_HEIGHT * 0.7
 MAIN_ENGINE_POWER = 10000 * SCALE_S ** 2
-SIDE_ENGINE_POWER = 50 * SCALE_S ** 2
+SIDE_ENGINE_POWER = 20 * SCALE_S ** 2
 GIMBAL_THRESHOLD = 0.4
 LANDER_POLY = [
     (-ROCKET_WIDTH / 2, 0),
@@ -134,8 +134,8 @@ class RocketLander(gym.Env):
         self.throttle = 0.0
         self.gimbal = 0.0
         self.fuel = START_FUEL
+        self.landed_ticks = 0
 
-        # terrain
         # self.terrainheigth = self.np_random.uniform(H / 20, H / 10)
         self.terrainheigth = H / 20
         # barge_pos = self.np_random.uniform(0, BARGE_WIDTH / SCALE) + BARGE_WIDTH / SCALE
@@ -150,7 +150,7 @@ class RocketLander(gym.Env):
                 friction=0.1,
                 restitution=0.0)
         )
-        self.water.color1 = (35. / 255, 70. / 255, 177. / 255)
+        self.water.color1 = (70 / 255, 96 / 255, 176 / 255)
 
         self.barge = self.world.CreateStaticBody(
             fixtures=fixtureDef(
@@ -175,16 +175,16 @@ class RocketLander(gym.Env):
                 density=1.0,
                 friction=0.5,
                 categoryBits=0x0010,
-                maskBits=0x001,  # collide only with ground
+                maskBits=0x001,
                 restitution=0.0)
         )
         self.lander.localCenter = (0, ROCKET_HEIGHT * 0.4)
 
         self.lander.color1 = (0.85, 0.85, 0.85)
         self.lander.linearVelocity = (
-            self.np_random.uniform(-0.1 * START_SPEED * INITIAL_RANDOM, 0.1 * START_SPEED * INITIAL_RANDOM),
+            self.np_random.uniform(-0.2 * START_SPEED * INITIAL_RANDOM, 0.2 * START_SPEED * INITIAL_RANDOM),
             self.np_random.uniform(-1.2 * START_SPEED * INITIAL_RANDOM, -0.8 * START_SPEED * INITIAL_RANDOM))
-        self.lander.angularVelocity = self.np_random.uniform(-0.3 * INITIAL_RANDOM, 0.3 * INITIAL_RANDOM)
+        self.lander.angularVelocity = self.np_random.uniform(-0.5 * INITIAL_RANDOM, 0.5 * INITIAL_RANDOM)
 
         for i in [-1, +1]:
             leg = self.world.CreateDynamicBody(
@@ -248,13 +248,13 @@ class RocketLander(gym.Env):
                 self.gimbal -= 0.10
         else:
             if action == 0:
-                self.gimbal += 0.1
+                self.gimbal += 0.025
             elif action == 1:
-                self.gimbal -= 0.1
+                self.gimbal -= 0.025
             elif action == 2:
-                self.throttle += 0.15
+                self.throttle += 0.05
             elif action == 3:
-                self.throttle -= 0.15
+                self.throttle -= 0.05
             elif action == 4:  # left
                 self.force_dir = -1
             elif action == 5:  # right
@@ -278,8 +278,8 @@ class RocketLander(gym.Env):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         state = [
-            (pos.x - W / 2) / H,
-            (pos.y - self.helipad_y) / H,
+            2 * (pos.x - W / 2) / W,
+            (pos.y - self.helipad_y) / W,
             self.lander.angle,
             1.0 if self.legs[0].ground_contact else 0.0,
             1.0 if self.legs[1].ground_contact else 0.0,
@@ -295,11 +295,13 @@ class RocketLander(gym.Env):
             self.fuel -= 0.5
 
         # REWARD -----------------------------------------------
-        reward = -self.throttle / 100 - abs(self.force_dir) / 100 - 1 / 100
+        reward = -self.throttle / 100 - abs(self.force_dir) / 100
 
         if self.legs[0].joint.angle < -0.4 or self.legs[1].joint.angle > 0.4 or \
                         abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
             self.game_over = True
+
+        landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.05
 
         done = False
         if self.game_over:
@@ -308,13 +310,17 @@ class RocketLander(gym.Env):
         else:
             shaping = - 1 * distance \
                       - 1 * speed \
-                      - 0.4 * angle \
+                      - 1 * angle \
                       + 0.2 * (state[3] + state[4])
             if self.prev_shaping is not None:
                 reward += shaping - self.prev_shaping
             self.prev_shaping = shaping
 
-            if not self.lander.awake:
+            if landed:
+                self.landed_ticks += 1
+            else:
+                self.landed_ticks = 0
+            if self.landed_ticks == 20:
                 print("LANDED SUCCESSFULLY")
                 done = True
                 reward = 1.0
@@ -331,12 +337,12 @@ class RocketLander(gym.Env):
 
         from gym.envs.classic_control import rendering
         if self.viewer is None:
-            self.yellow = (206. / 255, 206. / 255, 2. / 255)
+            self.yellow = (206 / 255, 206 / 255, 2 / 255)
             self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
             self.viewer.set_bounds(0, W, 0, H)
 
             sky = rendering.FilledPolygon([(0, 0), (0, H), (W, H), (W, 0)])
-            sky.set_color(126. / 255, 150. / 255, 255. / 255)
+            sky.set_color(126 / 255, 150 / 255, 255 / 255)
             self.viewer.add_geom(sky)
 
             self.rockettrans = rendering.Transform()
@@ -353,7 +359,7 @@ class RocketLander(gym.Env):
             fire = rendering.FilledPolygon(
                 [(ENGINE_WIDTH * 0.4, 0), (-ENGINE_WIDTH * 0.4, 0), (-ENGINE_WIDTH * 0.7, -ENGINE_HEIGHT * 4),
                  (0, -ENGINE_HEIGHT * 6), (ENGINE_WIDTH * 0.7, -ENGINE_HEIGHT * 4)])
-            fire.set_color(249. / 255, 241. / 255, 114. / 255)
+            fire.set_color(249 / 255, 241 / 255, 114 / 255)
             self.firescale = rendering.Transform(scale=(1, 1))
             self.firetrans = rendering.Transform(translation=(0, -ENGINE_HEIGHT))
             fire.add_attr(self.firescale)
@@ -366,7 +372,7 @@ class RocketLander(gym.Env):
                                             (ROCKET_WIDTH * 3, ROCKET_HEIGHT * 0.93),
                                             (ROCKET_WIDTH * 4, ROCKET_HEIGHT * 0.9),
                                             (ROCKET_WIDTH * 3, ROCKET_HEIGHT * 0.87)])
-            puff.set_color(185. / 255, 198. / 255, 255. / 255)
+            puff.set_color(185 / 255, 198 / 255, 255 / 255)
             self.puffscale = rendering.Transform(scale=(1, 1))
             puff.add_attr(self.puffscale)
             puff.add_attr(self.rockettrans)
