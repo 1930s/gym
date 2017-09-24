@@ -8,7 +8,7 @@ from gym import spaces
 from gym.utils import seeding
 
 # Rocket trajectory optimization is a classic topic in Optimal Control.
-CONTINUOUS = False
+CONTINUOUS = True
 
 FPS = 50
 SCALE_S = 0.5  # Temporal Scaling
@@ -102,7 +102,7 @@ class RocketLander(gym.Env):
         self.observation_space = spaces.Box(-high, high)
 
         if CONTINUOUS:
-            self.action_space = spaces.Box(-1, +1, (2,))
+            self.action_space = spaces.Box(-1, +1, (3,))
         else:
             self.action_space = spaces.Discrete(7)
 
@@ -229,7 +229,7 @@ class RocketLander(gym.Env):
         self.drawlist = [self.lander] + self.legs + [self.water] + [self.barge]
 
         if CONTINUOUS:
-            return self._step([0, 0])[0]
+            return self._step([0, 0, 0])[0]
         else:
             return self._step(6)[0]
 
@@ -239,13 +239,18 @@ class RocketLander(gym.Env):
 
         if CONTINUOUS:
             if action[0] > 0.2:
-                self.gimbal += 0.05
+                self.gimbal += 0.0125
             elif action[0] < -0.2:
-                self.gimbal -= 0.05
+                self.gimbal -= 0.0125
             if action[1] > 0.2:
-                self.gimbal += 0.10
+                self.throttle += 0.025
             elif action[1] < -0.2:
-                self.gimbal -= 0.10
+                self.throttle -= 0.025
+            if action[2] > 0.2:
+                self.force_dir = -1
+            elif action[2] < -0.2:
+                self.force_dir = 1
+
         else:
             if action == 0:
                 self.gimbal += 0.025
@@ -308,10 +313,10 @@ class RocketLander(gym.Env):
             done = True
             reward = -1.0
         else:
-            shaping = - 1 * distance \
-                      - 1 * speed \
-                      - 1 * angle \
-                      + 0.2 * (state[3] + state[4])
+            shaping = - 3 * distance \
+                      - 2 * speed \
+                      - 2 * angle \
+                      + 0.4 * (state[3] + state[4])
             if self.prev_shaping is not None:
                 reward += shaping - self.prev_shaping
             self.prev_shaping = shaping
