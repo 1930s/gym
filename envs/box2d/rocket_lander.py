@@ -8,7 +8,7 @@ from gym import spaces
 from gym.utils import seeding
 
 # Rocket trajectory optimization is a classic topic in Optimal Control.
-CONTINUOUS = True
+CONTINUOUS = False
 
 FPS = 50
 SCALE_S = 0.5  # Temporal Scaling
@@ -159,7 +159,7 @@ class RocketLander(gym.Env):
                               (self.helipad_x2, self.terrainheigth),
                               (self.helipad_x2, self.terrainheigth + BARGE_HEIGHT),
                               (self.helipad_x1, self.terrainheigth + BARGE_HEIGHT)]),
-                friction=0.4,
+                friction=0.3,
                 restitution=0.0)
         )
 
@@ -194,7 +194,7 @@ class RocketLander(gym.Env):
                     shape=polygonShape(vertices=LEG_POLY(i)),
                     density=1.0,
                     restitution=0.0,
-                    friction=0.4,
+                    friction=0.3,
                     categoryBits=0x0020,
                     maskBits=0x001)
             )
@@ -300,9 +300,9 @@ class RocketLander(gym.Env):
             self.fuel -= 0.5
 
         # REWARD -----------------------------------------------
-        reward = -self.throttle / 100 - abs(self.force_dir) / 100
+        reward = -self.throttle / 40 - abs(self.force_dir) / 100
 
-        if self.legs[0].joint.angle < -0.4 or self.legs[1].joint.angle > 0.4 or \
+        if self.legs[0].joint.angle < -0.2 or self.legs[1].joint.angle > 0.2 or \
                         abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
             self.game_over = True
 
