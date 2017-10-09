@@ -9,15 +9,15 @@ from gym.utils import seeding
 
 # Rocket trajectory optimization is a classic topic in Optimal Control.
 CONTINUOUS = False
-
-FPS = 50
+VEL_STATE = True
+FPS = 50  # "cinematic"
 SCALE_S = 0.5  # Temporal Scaling
 
 INITIAL_RANDOM = 0.7
 
-START_FUEL = 200.0
-START_HEIGHT = 400.0
-START_SPEED = 80.0
+START_FUEL = 400.0
+START_HEIGHT = 600.0
+START_SPEED = 200.0
 
 # ROCKET
 ROCKET_RATIO = 14
@@ -26,7 +26,7 @@ ROCKET_HEIGHT = ROCKET_WIDTH / 3.7 * 40
 ENGINE_HEIGHT = ROCKET_WIDTH * 0.5
 ENGINE_WIDTH = ENGINE_HEIGHT * 0.7
 MAIN_ENGINE_POWER = 10000 * SCALE_S ** 2
-SIDE_ENGINE_POWER = 20 * SCALE_S ** 2
+SIDE_ENGINE_POWER = 10 * SCALE_S ** 2
 GIMBAL_THRESHOLD = 0.4
 LANDER_POLY = [
     (-ROCKET_WIDTH / 2, 0),
@@ -98,7 +98,10 @@ class RocketLander(gym.Env):
         self.barge = None
         self.legs = []
 
-        high = np.array([np.inf] * 7)
+        if VEL_STATE:
+            high = np.array([np.inf] * 10)
+        else:
+            high = np.array([np.inf] * 7)
         self.observation_space = spaces.Box(-high, high)
 
         if CONTINUOUS:
@@ -130,7 +133,7 @@ class RocketLander(gym.Env):
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
         self.game_over = False
-        self.prev_shaping = None
+        self.prev_shaping_vector = None
         self.throttle = 0.0
         self.gimbal = 0.0
         self.fuel = START_FUEL
@@ -184,7 +187,7 @@ class RocketLander(gym.Env):
         self.lander.linearVelocity = (
             self.np_random.uniform(-0.2 * START_SPEED * INITIAL_RANDOM, 0.2 * START_SPEED * INITIAL_RANDOM),
             self.np_random.uniform(-1.2 * START_SPEED * INITIAL_RANDOM, -0.8 * START_SPEED * INITIAL_RANDOM))
-        self.lander.angularVelocity = self.np_random.uniform(-0.5 * INITIAL_RANDOM, 0.5 * INITIAL_RANDOM)
+        self.lander.angularVelocity = self.np_random.uniform(-0.3 * INITIAL_RANDOM, 0.3 * INITIAL_RANDOM)
 
         for i in [-1, +1]:
             leg = self.world.CreateDynamicBody(
@@ -253,13 +256,13 @@ class RocketLander(gym.Env):
 
         else:
             if action == 0:
-                self.gimbal += 0.025
+                self.gimbal += 0.0125
             elif action == 1:
-                self.gimbal -= 0.025
+                self.gimbal -= 0.0125
             elif action == 2:
-                self.throttle += 0.05
+                self.throttle += 0.0125
             elif action == 3:
-                self.throttle -= 0.05
+                self.throttle -= 0.0125
             elif action == 4:  # left
                 self.force_dir = -1
             elif action == 5:  # right
@@ -281,18 +284,24 @@ class RocketLander(gym.Env):
         self.world.Step(1.0 / FPS, 10, 10)
 
         pos = self.lander.position
-        vel = self.lander.linearVelocity
+        vel_l = self.lander.linearVelocity
+        vel_a = self.lander.angularVelocity
         state = [
-            2 * (pos.x - W / 2) / W,
-            (pos.y - self.helipad_y) / W,
+            2 * (pos.x - H / 2) / H,
+            (pos.y - self.helipad_y) / H,
             self.lander.angle,
             1.0 if self.legs[0].ground_contact else 0.0,
             1.0 if self.legs[1].ground_contact else 0.0,
             self.throttle,
             self.gimbal
         ]
+
+        if VEL_STATE:
+            state.extend([vel_l[0] / FPS,
+                          vel_l[1] / FPS,
+                          vel_a / FPS])
         distance = np.linalg.norm(state[0:2])
-        speed = np.linalg.norm(vel) / FPS
+        speed = np.linalg.norm(vel_l) / FPS
         angle = abs(state[2])
 
         self.fuel -= self.throttle
@@ -300,26 +309,24 @@ class RocketLander(gym.Env):
             self.fuel -= 0.5
 
         # REWARD -----------------------------------------------
-        reward = -self.throttle / 40 - abs(self.force_dir) / 100
+        fuel_cost = self.throttle / 200 + abs(self.force_dir) / 200
+        self.reward_vector = np.array([0, 0, 0, 0, 0, -fuel_cost, 0])
 
         if self.legs[0].joint.angle < -0.2 or self.legs[1].joint.angle > 0.2 or \
                         abs(pos.x - W / 2) > W / 2 or pos.y > H or self.fuel < 0:
             self.game_over = True
 
-        landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.05
+        landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.03
 
         done = False
         if self.game_over:
             done = True
-            reward = -1.0
+            self.reward_vector[6] = -1.0
         else:
-            shaping = - 3 * distance \
-                      - 2 * speed \
-                      - 2 * angle \
-                      + 0.4 * (state[3] + state[4])
-            if self.prev_shaping is not None:
-                reward += shaping - self.prev_shaping
-            self.prev_shaping = shaping
+            shaping_vector = np.array([-5 * distance, -5 * speed, -5 * angle, 0.5 * state[3], 0.5 * state[4], 0, 0])
+            if self.prev_shaping_vector is not None:
+                self.reward_vector += shaping_vector - self.prev_shaping_vector
+            self.prev_shaping_vector = shaping_vector
 
             if landed:
                 self.landed_ticks += 1
@@ -328,9 +335,11 @@ class RocketLander(gym.Env):
             if self.landed_ticks == 20:
                 print("LANDED SUCCESSFULLY")
                 done = True
-                reward = 1.0
-        # REWARD -----------------------------------------------
+                self.reward_vector[6] = 1.0
 
+        reward = np.sum(self.reward_vector)
+
+        # REWARD -----------------------------------------------
         return np.array(state), reward, done, {}
 
     def _render(self, mode='human', close=False):
