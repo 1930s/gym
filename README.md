@@ -5,7 +5,7 @@
 
 /envs/box2d/rocket_lander.py  
 
-The objective of this environment is to land a rocket on a ship.  
+The objective of this environment is to land a rocket on a ship. The environment is highly customizable and takes discrete or continuous inputs.
 
 ### STATE VARIABLES  
 The state consists of the following variables:
