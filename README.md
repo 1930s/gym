@@ -2,9 +2,9 @@
 
 /envs/box2d/rocket_lander.py  
 
-The objective of this environment is to land a rocket on a ship.  
+##### The objective of this environment is to land a rocket on a ship.  
 
-STATE VARIABLES
+### STATE VARIABLES  
 The state consists of the following variables:
   * x position  
   * y position  
@@ -19,7 +19,7 @@ If VEL_STATE is set to true, the velocities are included:
   * angular velocity
 all state variables are roughly in the range [-1, 1]  
     
-CONTROL INPUTS  
+### CONTROL INPUTS  
 Discrete control inputs are:  
   * gimbal left  
   * gimbal right  
