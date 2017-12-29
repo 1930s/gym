@@ -16,10 +16,12 @@ The state consists of the following variables:
   * second leg ground contact indicator  
   * throttle  
   * engine gimbal  
+  
 If VEL_STATE is set to true, the velocities are included:  
   * x velocity  
   * y velocity  
   * angular velocity  
+  
 all state variables are roughly in the range [-1, 1]  
     
 ### CONTROL INPUTS  
