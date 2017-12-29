@@ -6,13 +6,13 @@ The objective of this environment is to land a rocket on a ship.
 
 STATE VARIABLES
 The state consists of the following variables:  
-    - x position  
-    - y position  
-    - angle  
-    - first leg ground contact indicator  
-    - second leg ground contact indicator  
-    - throttle  
-    - engine gimbal  
+*x position  
+*y position  
+*angle  
+*first leg ground contact indicator  
+*second leg ground contact indicator  
+*throttle  
+*engine gimbal  
 If VEL_STATE is set to true, the velocities are included:  
     - x velocity  
     - y velocity  
