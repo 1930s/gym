@@ -1,11 +1,11 @@
 # ![GIF](https://thumbs.gfycat.com/CloudyFewCaracal-size_restricted.gif)
-#### [Click here for higher quality video](https://gfycat.com/CloudyFewCaracal)
+[Click here for higher quality video](https://gfycat.com/CloudyFewCaracal)
 
 # OpenAI Gym with custom SpaceX Rocket Lander environment for box2d  
 
 /envs/box2d/rocket_lander.py  
 
-##### The objective of this environment is to land a rocket on a ship.  
+The objective of this environment is to land a rocket on a ship.  
 
 ### STATE VARIABLES  
 The state consists of the following variables:
