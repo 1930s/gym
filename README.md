@@ -22,7 +22,7 @@ If VEL_STATE is set to true, the velocities are included:
   * y velocity  
   * angular velocity  
   
-all state variables are roughly in the range [-1, 1]  
+All state variables are roughly in the range [-1, 1]  
     
 ### CONTROL INPUTS  
 Discrete control inputs are:  
