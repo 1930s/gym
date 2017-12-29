@@ -1,4 +1,6 @@
-# ![Video](https://gfycat.com/CloudyFewCaracal)
+# [High Quality Preview](https://gfycat.com/CloudyFewCaracal)
+# ![GIF](https://thumbs.gfycat.com/CloudyFewCaracal-size_restricted.gif)
+
 
 # OpenAI Gym with custom SpaceX Rocket Lander environment for box2d  
 
