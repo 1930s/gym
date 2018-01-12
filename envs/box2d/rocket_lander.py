@@ -46,16 +46,16 @@ Continuous control inputs are:
 CONTINUOUS = True
 VEL_STATE = True  # Add velocity info to state
 FPS = 60
-SCALE_S = 0.45  # Temporal Scaling, lower is faster - adjust forces appropriately
+SCALE_S = 0.35  # Temporal Scaling, lower is faster - adjust forces appropriately
 MAX_TIMESTEPS = 1000
 INITIAL_RANDOM = 0.2  # Random scaling of initial velocity, higher is more difficult
 
 START_HEIGHT = 1000.0
-START_SPEED = 100.0
+START_SPEED = 80.0
 
 # ROCKET
-MAIN_ENGINE_POWER = 900
-SIDE_ENGINE_POWER = 20 / FPS
+MAIN_ENGINE_POWER = 1500 * SCALE_S
+SIDE_ENGINE_POWER = 100 / FPS * SCALE_S
 
 ROCKET_WIDTH = 3.66 * SCALE_S
 ROCKET_HEIGHT = ROCKET_WIDTH / 3.7 * 47.9
@@ -78,6 +78,8 @@ VIEWPORT_H = 1000
 VIEWPORT_W = 700
 H = 1.1 * START_HEIGHT * SCALE_S
 W = VIEWPORT_W / VIEWPORT_H * H
+
+MAX_SMOKE_LIFETIME = 2 * FPS
 
 
 class ContactDetector(contactListener):
@@ -166,9 +168,11 @@ class RocketLander(gym.Env):
         self.gimbal = 0.0
         self.landed_ticks = 0
         self.stepnumber = 0
+        self.smoke = []
 
         # self.terrainheigth = self.np_random.uniform(H / 20, H / 10)
         self.terrainheigth = H / 20
+        self.shipheight = self.terrainheigth + SHIP_HEIGHT
         # ship_pos = self.np_random.uniform(0, SHIP_WIDTH / SCALE) + SHIP_WIDTH / SCALE
         ship_pos = W / 2
         self.helipad_x1 = ship_pos - SHIP_WIDTH / 2
@@ -229,6 +233,7 @@ class RocketLander(gym.Env):
                 restitution=0.0)
         )
         self.lander.localCenter = (0, ROCKET_HEIGHT * 0.4)
+        self.lander.color1 = rgb(230, 230, 230)
 
         for i in [-1, +1]:
             leg = self.world.CreateDynamicBody(
@@ -281,7 +286,7 @@ class RocketLander(gym.Env):
 
         self.lander.angularVelocity = np.random.uniform(high=(initial_x - W / 2)) / 200
 
-        self.drawlist = self.legs + [self.water] + [self.ship] + self.containers
+        self.drawlist = self.legs + [self.water] + [self.ship] + self.containers + [self.lander]
 
         if CONTINUOUS:
             return self._step([0, 0, 0])[0]
@@ -330,12 +335,11 @@ class RocketLander(gym.Env):
         self.lander.ApplyLinearImpulse(impulse=force_c, point=force_pos_c, wake=False)
 
         self.world.Step(1.0 / FPS, 60, 60)
-
         pos = self.lander.position
         vel_l = np.array(self.lander.linearVelocity) / START_SPEED
         vel_a = self.lander.angularVelocity
-        x_distance = (pos.x - W / 2) / (H - self.terrainheigth)
-        y_distance = (pos.y - self.terrainheigth) / (H - self.terrainheigth)
+        x_distance = (pos.x - W / 2) / W
+        y_distance = (pos.y - self.shipheight) / (H - self.shipheight)
 
         angle = (self.lander.angle / np.pi) % 2
         if angle > 1:
@@ -362,12 +366,11 @@ class RocketLander(gym.Env):
         # REWARD -------------------------------------------------------------------------------------------------------
 
         # state variables for reward
-        distance = np.linalg.norm([x_distance, y_distance])
+        distance = np.linalg.norm((x_distance, y_distance))
         speed = np.linalg.norm(vel_l)
         brokenleg = self.legs[0].joint.angle < 0 or self.legs[1].joint.angle > 0
         outside = abs(pos.x - W / 2) > W / 2 or pos.y > H
-        fuelcost = 0.025 * (self.power + 0.5 * abs(self.force_dir)) / FPS
-        groundcontact = self.legs[0].ground_contact or self.legs[1].ground_contact
+        fuelcost = 0.02 * (self.power + abs(self.force_dir)) / FPS
         landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.1
         done = False
 
@@ -380,14 +383,15 @@ class RocketLander(gym.Env):
             done = True
         else:
             # reward shaping
-            shaping = -0.5 * (distance + speed + abs(angle))
+            shaping = -1 * (distance + speed + abs(angle))
+            shaping += 0.1 * (self.legs[0].ground_contact + self.legs[1].ground_contact)
             if self.prev_shaping is not None:
                 reward += shaping - self.prev_shaping
             self.prev_shaping = shaping
 
             if landed:
                 self.landed_ticks += 1
-                reward += 10 / FPS
+                reward += 1 / FPS
             else:
                 self.landed_ticks = 0
             if self.landed_ticks == FPS:
@@ -395,7 +399,7 @@ class RocketLander(gym.Env):
                 done = True
 
         if done:
-            reward = max(-1, 1 - 2 * (speed + distance + abs(angle) + abs(vel_a)))
+            reward += max(-1, 1 - 2 * (speed + distance + abs(angle) + abs(vel_a)))
 
         # REWARD -------------------------------------------------------------------------------------------------------
 
@@ -418,12 +422,13 @@ class RocketLander(gym.Env):
             self.viewer.set_bounds(0, W, 0, H)
 
             sky = rendering.FilledPolygon(((0, 0), (0, H), (W, H), (W, 0)))
-            sky.set_color(*rgb(126, 150, 233))
+            self.sky_color = rgb(126, 150, 233)
+            sky.set_color(*self.sky_color)
+            self.sky_color_half_transparent = np.array((np.array(self.sky_color) + rgb(255, 255, 255))) / 2
             self.viewer.add_geom(sky)
 
             self.rockettrans = rendering.Transform()
 
-            # engine
             engine = rendering.FilledPolygon(((0, 0),
                                               (ENGINE_WIDTH / 2, -ENGINE_HEIGHT),
                                               (-ENGINE_WIDTH / 2, -ENGINE_HEIGHT)))
@@ -433,34 +438,28 @@ class RocketLander(gym.Env):
             engine.set_color(.4, .4, .4)
             self.viewer.add_geom(engine)
 
-            # fire
-            fire = rendering.FilledPolygon(((ENGINE_WIDTH * 0.4, 0), (-ENGINE_WIDTH * 0.4, 0),
-                                            (-ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 5),
-                                            (0, -ENGINE_HEIGHT * 8), (ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 3)))
-            fire.set_color(*rgb(255, 230, 107))
+            self.fire = rendering.FilledPolygon(((ENGINE_WIDTH * 0.4, 0), (-ENGINE_WIDTH * 0.4, 0),
+                                                 (-ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 5),
+                                                 (0, -ENGINE_HEIGHT * 8), (ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 3)))
+            self.fire.set_color(*rgb(255, 230, 107))
             self.firescale = rendering.Transform(scale=(1, 1))
             self.firetrans = rendering.Transform(translation=(0, -ENGINE_HEIGHT))
-            fire.add_attr(self.firescale)
-            fire.add_attr(self.firetrans)
-            fire.add_attr(self.enginetrans)
-            fire.add_attr(self.rockettrans)
-            self.viewer.add_geom(fire)
+            self.fire.add_attr(self.firescale)
+            self.fire.add_attr(self.firetrans)
+            self.fire.add_attr(self.enginetrans)
+            self.fire.add_attr(self.rockettrans)
 
             smoke = rendering.FilledPolygon(((ROCKET_WIDTH / 2, THRUSTER_HEIGHT * 1),
                                              (ROCKET_WIDTH * 3, THRUSTER_HEIGHT * 1.03),
                                              (ROCKET_WIDTH * 4, THRUSTER_HEIGHT * 1),
                                              (ROCKET_WIDTH * 3, THRUSTER_HEIGHT * 0.97)))
-            smoke.set_color(*rgb(185, 198, 255))
+            smoke.set_color(*self.sky_color_half_transparent)
             self.smokescale = rendering.Transform(scale=(1, 1))
             smoke.add_attr(self.smokescale)
             smoke.add_attr(self.rockettrans)
             self.viewer.add_geom(smoke)
 
-            lander = rendering.FilledPolygon(self.lander.fixtures[0].shape.vertices)
-            lander.add_attr(self.rockettrans)
-            lander.set_color(*rgb(230, 230, 230))
-            self.viewer.add_geom(lander)
-
+            self.gridfins = []
             for i in (-1, 1):
                 finpoly = (
                     (i * ROCKET_WIDTH * 1.1, THRUSTER_HEIGHT * 1.01),
@@ -471,7 +470,31 @@ class RocketLander(gym.Env):
                 gridfin = rendering.FilledPolygon(finpoly)
                 gridfin.add_attr(self.rockettrans)
                 gridfin.set_color(0.25, 0.25, 0.25)
-                self.viewer.add_geom(gridfin)
+                self.gridfins.append(gridfin)
+
+        if self.stepnumber % 5 == 0 and self.power > 0:
+            s = [MAX_SMOKE_LIFETIME * self.power,  # total lifetime
+                 0,  # current lifetime
+                 self.power * (1 + 0.2 * np.random.random()),  # size
+                 np.array(self.lander.position)
+                 + self.power * ROCKET_WIDTH * 10 * np.array((np.sin(self.lander.angle + self.gimbal),
+                                                              -np.cos(self.lander.angle + self.gimbal)))
+                 + self.power * 5 * (np.random.random(2) - 0.5)]  # position
+            self.smoke.append(s)
+
+        for s in self.smoke:
+            s[1] += 1
+            if s[1] > s[0]:
+                self.smoke.remove(s)
+                continue
+            t = rendering.Transform(translation=(s[3][0], s[3][1] + H * s[1] / 1000))
+            self.viewer.draw_circle(radius=0.05 * s[1] + s[2],
+                                    color=self.sky_color + (1 - (2 * s[1] / s[0] - 1) ** 2) / 2 * (
+                                            self.sky_color_half_transparent - self.sky_color)).add_attr(t)
+
+        self.viewer.add_onetime(self.fire)
+        for g in self.gridfins:
+            self.viewer.add_onetime(g)
 
         for obj in self.drawlist:
             for f in obj.fixtures:
