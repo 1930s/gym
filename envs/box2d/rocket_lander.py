@@ -45,7 +45,7 @@ Continuous control inputs are:
 
 CONTINUOUS = True
 VEL_STATE = True  # Add velocity info to state
-FPS = 60
+FPS = 30
 SCALE_S = 0.35  # Temporal Scaling, lower is faster - adjust forces appropriately
 MAX_TIMESTEPS = 1000
 INITIAL_RANDOM = 0.2  # Random scaling of initial velocity, higher is more difficult
@@ -54,7 +54,7 @@ START_HEIGHT = 1000.0
 START_SPEED = 80.0
 
 # ROCKET
-MAIN_ENGINE_POWER = 1500 * SCALE_S
+MAIN_ENGINE_POWER = 1200 * SCALE_S
 SIDE_ENGINE_POWER = 100 / FPS * SCALE_S
 
 ROCKET_WIDTH = 3.66 * SCALE_S
@@ -329,7 +329,8 @@ class RocketLander(gym.Env):
         self.lander.ApplyForce(force=force, point=force_pos, wake=False)
 
         # control thruster force
-        force_pos_c = self.lander.fixtures[0].body.transform * (0, THRUSTER_HEIGHT)
+        force_pos_c = self.lander.position + THRUSTER_HEIGHT * np.array(
+            (np.sin(self.lander.angle), np.cos(self.lander.angle)))
         force_c = (-self.force_dir * math.cos(self.lander.angle) * SIDE_ENGINE_POWER,
                    self.force_dir * math.sin(self.lander.angle) * SIDE_ENGINE_POWER)
         self.lander.ApplyLinearImpulse(impulse=force_c, point=force_pos_c, wake=False)
@@ -370,36 +371,37 @@ class RocketLander(gym.Env):
         speed = np.linalg.norm(vel_l)
         brokenleg = self.legs[0].joint.angle < 0 or self.legs[1].joint.angle > 0
         outside = abs(pos.x - W / 2) > W / 2 or pos.y > H
-        fuelcost = 0.02 * (self.power + abs(self.force_dir)) / FPS
+        fuelcost = 0.5 * (self.power + abs(self.force_dir)) / FPS
         landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.1
         done = False
 
         reward = -fuelcost
 
-        if outside or self.stepnumber > MAX_TIMESTEPS or brokenleg:
+        if outside or self.stepnumber > MAX_TIMESTEPS:
             self.game_over = True
 
         if self.game_over:
             done = True
         else:
             # reward shaping
-            shaping = -1 * (distance + speed + abs(angle))
-            shaping += 0.1 * (self.legs[0].ground_contact + self.legs[1].ground_contact)
+            shaping = -10 * (distance + speed + 0.2 * abs(angle) ** 2 + 0.1 * abs(vel_a))
             if self.prev_shaping is not None:
                 reward += shaping - self.prev_shaping
             self.prev_shaping = shaping
 
             if landed:
                 self.landed_ticks += 1
-                reward += 1 / FPS
+                reward += 5 / FPS
             else:
                 self.landed_ticks = 0
             if self.landed_ticks == FPS:
                 print("LANDED SUCCESSFULLY")
                 done = True
 
-        if done:
-            reward += max(-1, 1 - 2 * (speed + distance + abs(angle) + abs(vel_a)))
+        reward = np.clip(reward, -1, 1)
+
+        # if done:
+        #     reward += max(0, 1 - (speed + distance + abs(angle) + abs(vel_a)))
 
         # REWARD -------------------------------------------------------------------------------------------------------
 
@@ -472,7 +474,7 @@ class RocketLander(gym.Env):
                 gridfin.set_color(0.25, 0.25, 0.25)
                 self.gridfins.append(gridfin)
 
-        if self.stepnumber % 5 == 0 and self.power > 0:
+        if self.stepnumber % round(FPS / 10) == 0 and self.power > 0:
             s = [MAX_SMOKE_LIFETIME * self.power,  # total lifetime
                  0,  # current lifetime
                  self.power * (1 + 0.2 * np.random.random()),  # size
@@ -487,7 +489,7 @@ class RocketLander(gym.Env):
             if s[1] > s[0]:
                 self.smoke.remove(s)
                 continue
-            t = rendering.Transform(translation=(s[3][0], s[3][1] + H * s[1] / 1000))
+            t = rendering.Transform(translation=(s[3][0], s[3][1] + H * s[1] / 2000))
             self.viewer.draw_circle(radius=0.05 * s[1] + s[2],
                                     color=self.sky_color + (1 - (2 * s[1] / s[0] - 1) ** 2) / 2 * (
                                             self.sky_color_half_transparent - self.sky_color)).add_attr(t)
