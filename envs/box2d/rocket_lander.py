@@ -1,4 +1,3 @@
-import math
 import numpy as np
 import Box2D
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, distanceJointDef,
@@ -48,7 +47,7 @@ VEL_STATE = True  # Add velocity info to state
 FPS = 30
 SCALE_S = 0.35  # Temporal Scaling, lower is faster - adjust forces appropriately
 MAX_TIMESTEPS = 1000
-INITIAL_RANDOM = 0.2  # Random scaling of initial velocity, higher is more difficult
+INITIAL_RANDOM = 0.4  # Random scaling of initial velocity, higher is more difficult
 
 START_HEIGHT = 1000.0
 START_SPEED = 80.0
@@ -282,9 +281,9 @@ class RocketLander(gym.Env):
 
         self.lander.linearVelocity = (
             -self.np_random.uniform(0, INITIAL_RANDOM) * START_SPEED * (initial_x - W / 2) / W,
-            -self.np_random.uniform(1 - INITIAL_RANDOM, 1) * START_SPEED)
+            -START_SPEED)
 
-        self.lander.angularVelocity = np.random.uniform(high=(initial_x - W / 2)) / 200
+        self.lander.angularVelocity = (1 + INITIAL_RANDOM) * np.random.uniform(high=(initial_x - W / 2)) / 200
 
         self.drawlist = self.legs + [self.water] + [self.ship] + self.containers + [self.lander]
 
@@ -324,18 +323,19 @@ class RocketLander(gym.Env):
 
         # main engine force
         force_pos = (self.lander.position[0], self.lander.position[1])
-        force = (-math.sin(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.power,
-                 math.cos(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.power)
+        force = (-np.sin(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.power,
+                 np.cos(self.lander.angle + self.gimbal) * MAIN_ENGINE_POWER * self.power)
         self.lander.ApplyForce(force=force, point=force_pos, wake=False)
 
         # control thruster force
         force_pos_c = self.lander.position + THRUSTER_HEIGHT * np.array(
             (np.sin(self.lander.angle), np.cos(self.lander.angle)))
-        force_c = (-self.force_dir * math.cos(self.lander.angle) * SIDE_ENGINE_POWER,
-                   self.force_dir * math.sin(self.lander.angle) * SIDE_ENGINE_POWER)
+        force_c = (-self.force_dir * np.cos(self.lander.angle) * SIDE_ENGINE_POWER,
+                   self.force_dir * np.sin(self.lander.angle) * SIDE_ENGINE_POWER)
         self.lander.ApplyLinearImpulse(impulse=force_c, point=force_pos_c, wake=False)
 
         self.world.Step(1.0 / FPS, 60, 60)
+
         pos = self.lander.position
         vel_l = np.array(self.lander.linearVelocity) / START_SPEED
         vel_a = self.lander.angularVelocity
@@ -369,22 +369,23 @@ class RocketLander(gym.Env):
         # state variables for reward
         distance = np.linalg.norm((x_distance, y_distance))
         speed = np.linalg.norm(vel_l)
-        brokenleg = self.legs[0].joint.angle < 0 or self.legs[1].joint.angle > 0
+        groundcontact = self.legs[0].ground_contact or self.legs[1].ground_contact
+        brokenleg = self.legs[0].joint.angle < 0 or self.legs[1].joint.angle > 0 and groundcontact
         outside = abs(pos.x - W / 2) > W / 2 or pos.y > H
-        fuelcost = 0.5 * (self.power + abs(self.force_dir)) / FPS
+        fuelcost = 1 * (0.1 * self.power + abs(self.force_dir)) / FPS
         landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.1
         done = False
 
         reward = -fuelcost
 
-        if outside or self.stepnumber > MAX_TIMESTEPS:
+        if outside or self.stepnumber > MAX_TIMESTEPS or brokenleg:
             self.game_over = True
 
         if self.game_over:
             done = True
         else:
             # reward shaping
-            shaping = -10 * (distance + speed + 0.2 * abs(angle) ** 2 + 0.1 * abs(vel_a))
+            shaping = -10 * (distance + speed + 0.1 * abs(angle) + 0.1 * abs(vel_a))
             if self.prev_shaping is not None:
                 reward += shaping - self.prev_shaping
             self.prev_shaping = shaping
@@ -398,10 +399,10 @@ class RocketLander(gym.Env):
                 print("LANDED SUCCESSFULLY")
                 done = True
 
-        reward = np.clip(reward, -1, 1)
+        if done:
+            reward += max(0, 1 - (speed + distance + abs(angle) + abs(vel_a)))
 
-        # if done:
-        #     reward += max(0, 1 - (speed + distance + abs(angle) + abs(vel_a)))
+        reward = np.clip(reward, -1, 1)
 
         # REWARD -------------------------------------------------------------------------------------------------------
 
