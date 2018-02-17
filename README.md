@@ -1,4 +1,4 @@
-# ![GIF](https://thumbs.gfycat.com/RemorsefulHeftyAntbear-max-14mb.gif)
+# ![GIF](https://thumbs.gfycat.com/CoarseEmbellishedIsopod-max-14mb.gif)
 [Click here for higher quality video](https://gfycat.com/CloudyFewCaracal)
 
 # OpenAI Gym with custom SpaceX Rocket Lander environment for box2d  
