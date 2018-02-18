@@ -3,7 +3,7 @@
 
 # OpenAI Gym with custom SpaceX Rocket Lander environment for box2d  
 
-[/envs/box2d/rocket_lander.py](https://github.com/EmbersArc/gym/blob/master/envs/box2d/rocket_lander.py)
+[/envs/box2d/rocket_lander.py](https://github.com/EmbersArc/gym/blob/master/envs/box2d/rocket_lander.py) is the only important file, along with some small changes to init files, see https://github.com/openai/gym#environments
 
 The objective of this environment is to land a rocket on a ship. The environment is highly customizable and takes discrete or continuous inputs.
 
