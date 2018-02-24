@@ -74,13 +74,18 @@ SHIP_HEIGHT = ROCKET_WIDTH
 SHIP_WIDTH = SHIP_HEIGHT * 40
 
 # VIEWPORT
-VIEWPORT_H = 1000
-VIEWPORT_W = 700
+VIEWPORT_H = 1440
+VIEWPORT_W = 1008
 H = 1.1 * START_HEIGHT * SCALE_S
 W = VIEWPORT_W / VIEWPORT_H * H
 
 # SMOKE FOR VISUALS
 MAX_SMOKE_LIFETIME = 2 * FPS
+
+MEAN = np.array([-0.034, -0.15, -0.016, 0.0024, 0.0024, 0.137,
+                 - 0.02, -0.01, -0.8, 0.002])
+VAR = np.sqrt(np.array([0.08, 0.33, 0.0073, 0.0023, 0.0023, 0.8,
+                0.085, 0.0088, 0.063, 0.076]))
 
 
 class ContactDetector(contactListener):
@@ -123,20 +128,20 @@ class RocketLander(gym.Env):
         self.ship = None
         self.legs = []
 
-        high = np.array([1, 1, 1, 1, 1, 1, 1, np.inf, np.inf, np.inf])
+        high = np.array([1, 1, 1, 1, 1, 1, 1, np.inf, np.inf, np.inf], dtype=np.float32)
         low = -high
         if not VEL_STATE:
             high = high[0:7]
             low = low[0:7]
 
-        self.observation_space = spaces.Box(low, high)
+        self.observation_space = spaces.Box(low, high, dtype=np.float32)
 
         if CONTINUOUS:
-            self.action_space = spaces.Box(-1, +1, (3,))
+            self.action_space = spaces.Box(-1.0, +1.0, (3,), dtype=np.float32)
         else:
             self.action_space = spaces.Discrete(7)
 
-        self._reset()
+        self.reset()
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -159,7 +164,7 @@ class RocketLander(gym.Env):
         self.world.DestroyBody(self.containers[1])
         self.containers = []
 
-    def _reset(self):
+    def reset(self):
         self._destroy()
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
@@ -290,11 +295,11 @@ class RocketLander(gym.Env):
         self.drawlist = self.legs + [self.water] + [self.ship] + self.containers + [self.lander]
 
         if CONTINUOUS:
-            return self._step([0, 0, 0])[0]
+            return self.step([0, 0, 0])[0]
         else:
-            return self._step(6)[0]
+            return self.step(6)[0]
 
-    def _step(self, action):
+    def step(self, action):
 
         self.force_dir = 0
 
@@ -404,17 +409,21 @@ class RocketLander(gym.Env):
                 done = True
 
         if done:
-            reward += max(-1, 0 - (speed + distance + abs(angle) + abs(vel_a)))
+            reward += max(-1, 0 - 2 * (speed + distance + abs(angle) + abs(vel_a)))
         elif not groundcontact:
-            reward -= 0.15 / FPS
+            reward -= 0.25 / FPS
+
+        reward = np.clip(reward, -1, 1)
 
         # REWARD -------------------------------------------------------------------------------------------------------
 
         self.stepnumber += 1
 
+        state = (state - MEAN[:len(state)]) / VAR[:len(state)]
+
         return np.array(state), reward, done, {}
 
-    def _render(self, mode='human', close=False):
+    def render(self, mode='human', close=False):
         if close:
             if self.viewer is not None:
                 self.viewer.close()
@@ -447,7 +456,7 @@ class RocketLander(gym.Env):
 
             self.fire = rendering.FilledPolygon(((ENGINE_WIDTH * 0.4, 0), (-ENGINE_WIDTH * 0.4, 0),
                                                  (-ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 5),
-                                                 (0, -ENGINE_HEIGHT * 8), (ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 3)))
+                                                 (0, -ENGINE_HEIGHT * 8), (ENGINE_WIDTH * 1.2, -ENGINE_HEIGHT * 5)))
             self.fire.set_color(*rgb(255, 230, 107))
             self.firescale = rendering.Transform(scale=(1, 1))
             self.firetrans = rendering.Transform(translation=(0, -ENGINE_HEIGHT))
