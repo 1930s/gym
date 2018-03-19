@@ -77,7 +77,7 @@ SHIP_WIDTH = SHIP_HEIGHT * 40
 VIEWPORT_H = 1440
 VIEWPORT_W = 1008
 H = 1.1 * START_HEIGHT * SCALE_S
-W = VIEWPORT_W / VIEWPORT_H * H
+W = float(VIEWPORT_W) / VIEWPORT_H * H
 
 # SMOKE FOR VISUALS
 MAX_SMOKE_LIFETIME = 2 * FPS
@@ -85,7 +85,7 @@ MAX_SMOKE_LIFETIME = 2 * FPS
 MEAN = np.array([-0.034, -0.15, -0.016, 0.0024, 0.0024, 0.137,
                  - 0.02, -0.01, -0.8, 0.002])
 VAR = np.sqrt(np.array([0.08, 0.33, 0.0073, 0.0023, 0.0023, 0.8,
-                0.085, 0.0088, 0.063, 0.076]))
+                        0.085, 0.0088, 0.063, 0.076]))
 
 
 class ContactDetector(contactListener):
@@ -378,7 +378,7 @@ class RocketLander(gym.Env):
         distance = np.linalg.norm((3 * x_distance, y_distance))  # weight x position more
         speed = np.linalg.norm(vel_l)
         groundcontact = self.legs[0].ground_contact or self.legs[1].ground_contact
-        brokenleg = (self.legs[0].joint.angle < 0.0 or self.legs[1].joint.angle > 0.0) and groundcontact
+        brokenleg = (self.legs[0].joint.angle < 0 or self.legs[1].joint.angle > -0) and groundcontact
         outside = abs(pos.x - W / 2) > W / 2 or pos.y > H
         fuelcost = 0.1 * (0 * self.power + abs(self.force_dir)) / FPS
         landed = self.legs[0].ground_contact and self.legs[1].ground_contact and speed < 0.1
@@ -404,7 +404,6 @@ class RocketLander(gym.Env):
             else:
                 self.landed_ticks = 0
             if self.landed_ticks == FPS:
-                print("LANDED SUCCESSFULLY")
                 reward = 1.0
                 done = True
 
@@ -538,4 +537,4 @@ class RocketLander(gym.Env):
 
 
 def rgb(r, g, b):
-    return r / 255, g / 255, b / 255
+    return float(r) / 255, float(g) / 255, float(b) / 255
