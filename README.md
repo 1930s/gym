@@ -1,6 +1,8 @@
 # ![GIF](https://thumbs.gfycat.com/CoarseEmbellishedIsopod-max-14mb.gif)
 [Click here for higher quality video](https://gfycat.com/CoarseEmbellishedIsopod)
 
+RL algorithm and working model: https://github.com/EmbersArc/PPO
+
 # OpenAI Gym with custom SpaceX Rocket Lander environment for box2d  
 
 [/envs/box2d/rocket_lander.py](https://github.com/EmbersArc/gym/blob/master/envs/box2d/rocket_lander.py) is the only important file, along with some small changes to init files, see https://github.com/openai/gym#environments
@@ -22,7 +24,7 @@ If VEL_STATE is set to true, the velocities are included:
   * y velocity  
   * angular velocity  
   
-All state variables are roughly in the range [-1, 1]  
+All state variables are normalized for improved training.
     
 ### CONTROL INPUTS  
 Discrete control inputs are:  
